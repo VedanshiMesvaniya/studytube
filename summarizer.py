@@ -7,15 +7,13 @@ from utils import truncate_text, chunk_text
 
 load_dotenv()
 
-import streamlit as st
-
 def get_client():
     try:
         import streamlit as st
         key = st.secrets["GROQ_API_KEY"]
     except Exception:
         key = os.getenv("GROQ_API_KEY")
-    return Groq(api_key=key))
+    return Groq(api_key=key)
 
 def ask_groq(prompt, max_tokens=1800, retries=3):
     client = get_client()
@@ -36,8 +34,6 @@ def ask_groq(prompt, max_tokens=1800, retries=3):
 
 def compress_transcript(text):
     word_count = len(text.split())
-
-    # short enough — no compression needed
     if word_count <= 2000:
         return text, 1
 
@@ -54,16 +50,12 @@ Segment:
         try:
             summary = ask_groq(prompt, max_tokens=150)
             summaries.append(summary)
-            # small delay between chunk calls to avoid TPM limit
             if i < len(chunks) - 1:
                 time.sleep(2)
         except Exception:
-            # if a chunk fails just skip it
             continue
 
     compressed = " ".join(summaries)
-
-    # final safety truncate on the compressed version
     compressed, _ = truncate_text(compressed, max_words=2000)
     return compressed, len(chunks)
 
@@ -139,7 +131,6 @@ def parse_all_notes(raw):
         if start_idx == -1:
             continue
         start_idx += len(start_marker)
-
         if i + 1 < len(order):
             next_marker = markers[order[i + 1]]
             end_idx = raw.find(next_marker)
