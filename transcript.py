@@ -1,8 +1,7 @@
 import re
-from youtube_transcript_api import YouTubeTranscriptApi
-from youtube_transcript_api.proxies import WebshareProxyConfig
-from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
 import os
+from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
 
 SUPPORTED_LANGUAGES = {
     'Auto Detect': None,
@@ -21,6 +20,9 @@ SUPPORTED_LANGUAGES = {
 }
 
 def get_ytt():
+    proxy_user = ""
+    proxy_pass = ""
+
     try:
         import streamlit as st
         proxy_user = st.secrets.get("PROXY_USERNAME", "")
@@ -30,11 +32,16 @@ def get_ytt():
         proxy_pass = os.getenv("PROXY_PASSWORD", "")
 
     if proxy_user and proxy_pass:
-        proxy_config = WebshareProxyConfig(
-            proxy_username=proxy_user,
-            proxy_password=proxy_pass,
-        )
-        return YouTubeTranscriptApi(proxy_config=proxy_config)
+        try:
+            from youtube_transcript_api.proxies import WebshareProxyConfig
+            proxy_config = WebshareProxyConfig(
+                proxy_username=proxy_user,
+                proxy_password=proxy_pass,
+            )
+            return YouTubeTranscriptApi(proxy_config=proxy_config)
+        except Exception:
+            return YouTubeTranscriptApi()
+
     return YouTubeTranscriptApi()
 
 def extract_video_id(url):
@@ -91,6 +98,7 @@ def get_transcript(url, language=None):
                 lang_label = lang_name[0] if lang_name else language
                 full_text = " ".join([entry.text for entry in transcript_data])
                 return full_text, f"No {lang_label} transcript found. Using: {fallback.language}. Available: {', '.join(available)}"
+
         else:
             transcript_data = ytt.fetch(video_id)
 
@@ -99,18 +107,9 @@ def get_transcript(url, language=None):
 
     except TranscriptsDisabled:
         return None, "This video has transcripts disabled."
+
     except NoTranscriptFound:
         return None, "No transcript found. Try a different language or check if the video has captions."
+
     except Exception as e:
         return None, f"Something went wrong: {str(e)}"
-```
-
----
-
-## Step 3 — Add proxy secrets to Streamlit
-
-Go to your app → **Settings** → **Secrets** → add:
-```
-GROQ_API_KEY = "gsk_your_key_here"
-PROXY_USERNAME = "your_webshare_username"
-PROXY_PASSWORD = "your_webshare_password"
