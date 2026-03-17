@@ -9,15 +9,16 @@ load_dotenv()
 
 import streamlit as st
 
-def get_api_key():
+def get_client():
     try:
-        return st.secrets["GROQ_API_KEY"]
+        import streamlit as st
+        key = st.secrets["GROQ_API_KEY"]
     except Exception:
-        return os.getenv("GROQ_API_KEY")
-
-client = Groq(api_key=get_api_key())
+        key = os.getenv("GROQ_API_KEY")
+    return Groq(api_key=key))
 
 def ask_groq(prompt, max_tokens=1800, retries=3):
+    client = get_client()
     for attempt in range(retries):
         try:
             response = client.chat.completions.create(
