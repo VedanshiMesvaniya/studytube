@@ -1,7 +1,13 @@
 import axios from 'axios'
 
-// Set VITE_API_BASE_URL in frontend/.env if your backend isn't on localhost:8000
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+// In production (npm run build), this app is served BY the FastAPI backend
+// itself, so requests can stay relative ('') — same origin, no CORS.
+//
+// In dev (npm run dev, hot-reload on :5173) it defaults to localhost:8000.
+// Override either with VITE_API_BASE_URL in frontend/.env if your backend
+// runs somewhere else.
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? 'http://localhost:8000' : '')
 
 const client = axios.create({
   baseURL: API_BASE_URL,

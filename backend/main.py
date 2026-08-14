@@ -4,19 +4,30 @@ StudyTube API — FastAPI backend.
 This replaces the old Streamlit UI (app.py). All the notes-generation
 logic (transcript fetching, Whisper/vision fallback, Groq LLM calls,
 PDF export) lives untouched in src/services and src/utils — this file
-just exposes it over HTTP so the React frontend (../frontend) can call
-it.
+just exposes it over HTTP.
 
-Run with:
-    uvicorn main:app --reload --port 8000
+This app ALSO serves the built React frontend (frontend/dist) as static
+files, so a single `uvicorn` process handles both the API and the UI —
+no separate `npm run dev` / second terminal needed:
+
+    cd frontend && npm install && npm run build
+    cd ../backend && uvicorn main:app --port 8000
+
+Then open http://localhost:8000 — that's the app, API and all.
+
+(For frontend hot-reload during active UI development, you can still run
+`npm run dev` in frontend/ separately against this same backend — see
+README.md. That's optional, not required to run the app.)
 """
 from __future__ import annotations
 
 import io
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from src.config import CORS_ORIGINS
@@ -118,3 +129,22 @@ def download_pdf(payload: PdfRequest):
         media_type="application/pdf",
         headers={"Content-Disposition": "attachment; filename=studytube_notes.pdf"},
     )
+
+
+# ----------------------------------------------------------- serve frontend --
+# Mounted LAST and at "/" so every /api/... route above still matches first —
+# this only ever catches requests that aren't for the API, i.e. the app UI.
+_FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+
+if _FRONTEND_DIST.is_dir():
+    app.mount("/", StaticFiles(directory=_FRONTEND_DIST, html=True), name="frontend")
+else:
+    @app.get("/")
+    def frontend_not_built():
+        return {
+            "detail": (
+                "Frontend build not found. Run `cd frontend && npm install && "
+                "npm run build`, then restart this server — it will then also "
+                "serve the app at this URL."
+            )
+        }

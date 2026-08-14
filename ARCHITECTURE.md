@@ -2,29 +2,48 @@
 
 ## Overview
 
-StudyTube is split into two independently-run applications that talk over
-HTTP:
+StudyTube is code-split into a frontend and a backend, but by default they
+run as a **single process on a single port**: `npm run build` produces
+static files (`frontend/dist`), and the FastAPI backend serves both those
+static files *and* the `/api/*` JSON endpoints from the same `uvicorn`
+process.
 
 ```
-┌─────────────────────────┐        HTTP/JSON        ┌──────────────────────────────┐
-│   frontend (React/Vite) │ ───────────────────────▶ │   backend (FastAPI/Python)   │
-│   http://localhost:5173 │ ◀─────────────────────── │   http://localhost:8000      │
-└─────────────────────────┘                          └───────────────┬──────────────┘
-                                                                      │
-                                                    ┌─────────────────┼─────────────────┐
-                                                    ▼                 ▼                 ▼
-                                          YouTube captions      Groq (Whisper,     Groq (LLM,
-                                          (youtube-transcript-  vision model)      notes/quiz/
-                                          api)                  via yt-dlp +       flashcards/
-                                                                 ffmpeg            visuals JSON)
+                 http://localhost:8000
+        ┌───────────────────────────────────┐
+        │        backend (FastAPI)          │
+        │                                    │
+        │  /api/health, /api/languages,      │
+        │  /api/notes, /api/pdf   ─────┐     │
+        │                              │     │
+        │  /  (everything else)  ──▶ frontend/dist  │
+        │     (StaticFiles mount, built by Vite)     │
+        └───────────────┬─────────────┴─────┘
+                         │
+        ┌────────────────┼─────────────────┐
+        ▼                ▼                 ▼
+  YouTube captions   Groq (Whisper,   Groq (LLM,
+  (youtube-           vision model)   notes/quiz/
+  transcript-api)     via yt-dlp +    flashcards/
+                       ffmpeg          visuals JSON)
 ```
 
-This is a clean frontend/backend split rather than a monolith because the
-heavy lifting (yt-dlp, ffmpeg, the Groq SDK, PDF generation) is
-Python-specific and was already written and working — porting it to
-JavaScript would mean rewriting battle-tested logic for no benefit. Wrapping
-it in a small FastAPI layer instead lets the whole `src/services` and
-`src/utils` tree move over almost untouched.
+The code itself is still cleanly split — `frontend/` (React/Vite, browser
+code) and `backend/` (FastAPI, Python) are independent projects with their
+own dependencies — but at runtime `backend/main.py` mounts
+`frontend/dist` as static files (see "Serving the frontend" below), so
+there's exactly one server to start and one port to open. This is a clean
+split rather than a monolith source tree because the heavy lifting
+(yt-dlp, ffmpeg, the Groq SDK, PDF generation) is Python-specific and was
+already written and working — porting it to JavaScript would mean
+rewriting battle-tested logic for no benefit. Wrapping it in a small
+FastAPI layer instead let the whole `src/services` and `src/utils` tree
+move over almost untouched, while the *deployed* app is still one process.
+
+An optional two-process dev workflow (`npm run dev` on :5173 talking to
+`uvicorn --reload` on :8000) is still available for hot-reloading during
+active frontend development — see README.md section 5 — but it's opt-in,
+not the default.
 
 ---
 
@@ -80,6 +99,32 @@ directly — it only ever calls this API.
 Auto-generated interactive docs are available at `/docs` (Swagger UI) and
 `/redoc` while the server is running — useful for testing endpoints without
 the frontend.
+
+### Serving the frontend
+
+At the bottom of `backend/main.py`, after every `/api/*` route has already
+been registered, the app does:
+
+```python
+app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
+```
+
+Starlette (which FastAPI is built on) matches routes in registration
+order, so any request to `/api/...` is already handled by the routes above
+before the router ever reaches this mount — the mount only ever catches
+requests for the UI (`/`, `/assets/...`, etc.), never the API. `html=True`
+makes it serve `index.html` for `/` automatically. If `frontend/dist`
+doesn't exist yet (i.e. `npm run build` hasn't been run), the app falls
+back to a small JSON message at `/` telling you to build it, instead of
+crashing on startup.
+
+Because the browser loads the page from the same origin
+(`http://localhost:8000`) that serves the API, the frontend's API client
+(`frontend/src/api/client.js`) defaults to relative URLs in a production
+build — no CORS, no separate origin to configure. It only falls back to
+`http://localhost:8000` explicitly when running under Vite's own dev
+server (`import.meta.env.DEV`), which is a different origin (`:5173`) by
+nature.
 
 ### Why charts moved out of the backend
 
