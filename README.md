@@ -1,52 +1,244 @@
 # StudyTube
 
-Paste a YouTube link → fetches transcript → LLM summarizes it, pulls key
-points, generates Q&A, a quiz, and flashcards. Falls back to Whisper audio
-transcription automatically if a video has no captions.
+Paste a YouTube link → fetches the transcript → an LLM summarizes it, pulls
+key points, generates Q&A, a quiz, and flashcards, and detects any
+diagrams/charts/mind-maps worth visualizing. Falls back to Whisper audio
+transcription automatically if a video has no captions, and to vision-model
+frame analysis if it also has little/no speech.
 
-## Project structure
+This project has two parts that run separately:
+
+- **`backend/`** — a Python **FastAPI** server. This is the old Streamlit
+  app's logic (transcript fetching, Whisper/vision fallback, Groq LLM
+  calls, PDF export), unchanged, now exposed as a small REST API instead of
+  rendering HTML itself.
+- **`frontend/`** — a **React** (Vite) single-page app with two themes,
+  `academic-dark` and `academic-light`, that talks to the backend over
+  HTTP. This replaces the old Streamlit UI.
+
+All the original features are the same: transcript/audio/visual
+understanding, summary, key points, Q&A, quiz (with scoring), flashcards
+(flip to reveal), auto-detected flowcharts/charts/mind-maps, and PDF export.
+
+---
+
+## 1. Project structure
 
 ```
-studytube/
-├── app.py                          # Streamlit UI (entry point)
-├── src/
-│   ├── config.py                   # reads API keys/models from .env or st.secrets
-│   ├── services/
-│   │   ├── transcript_service.py   # YouTube captions (primary source)
-│   │   ├── audio_transcription.py  # Whisper fallback when no captions exist
-│   │   └── llm_service.py          # summary / key points / Q&A / quiz / flashcards
-│   └── utils/
-│       └── helpers.py              # PDF export, chart generation
-├── requirements.txt
-├── .env.example
-└── .gitignore
+StudyTube/
+├── backend/
+│   ├── main.py                     # FastAPI app (entry point) — defines the HTTP API
+│   ├── requirements.txt
+│   ├── .env.example                # copy to .env and fill in your keys
+│   └── src/
+│       ├── config.py                # reads API keys/models from .env
+│       ├── services/
+│       │   ├── transcript_service.py    # YouTube captions (primary source)
+│       │   ├── audio_transcription.py   # Whisper fallback when no captions exist
+│       │   ├── visual_transcription.py  # vision-model fallback for silent videos
+│       │   ├── understanding_service.py # orchestrates captions -> audio -> visual
+│       │   └── llm_service.py           # summary / key points / Q&A / quiz / flashcards / visuals JSON
+│       └── utils/
+│           ├── helpers.py           # text truncation/chunking, PDF export
+│           └── parsers.py           # turns raw quiz/flashcard text into structured JSON
+│
+├── frontend/
+│   ├── index.html
+│   ├── package.json
+│   ├── vite.config.js
+│   ├── .env.example                 # copy to .env if your backend isn't on localhost:8000
+│   └── src/
+│       ├── main.jsx                 # React entry point
+│       ├── App.jsx                  # top-level layout, state, theme handling
+│       ├── api/
+│       │   └── client.js            # calls the FastAPI backend
+│       ├── components/
+│       │   ├── Hero.jsx
+│       │   ├── ThemeToggle.jsx
+│       │   ├── SearchForm.jsx
+│       │   ├── ResultsPanel.jsx     # tab navigation + PDF download
+│       │   ├── QuizTab.jsx
+│       │   ├── FlashcardsTab.jsx
+│       │   ├── VisualsTab.jsx
+│       │   ├── MermaidDiagram.jsx   # renders flowcharts/mind-maps
+│       │   └── ChartBlock.jsx       # renders bar/line/pie charts (Recharts)
+│       └── styles/
+│           ├── themes.css           # academic-dark / academic-light CSS variables
+│           ├── base.css             # resets, fonts, scrollbar
+│           └── App.css              # component styling
+│
+├── ARCHITECTURE.md                  # how the pieces fit together / data flow
+├── LICENSE
+└── README.md                        # this file
 ```
 
-## Setup
+---
 
-```bash
-pip install -r requirements.txt
-cp .env.example .env   # then fill in GROQ_API_KEY
-```
+## 2. Get your API key (required)
 
-The audio fallback needs `ffmpeg` on your system (used by `yt-dlp` to
-extract audio):
+Everything model-related (LLM notes generation, Whisper fallback, vision
+fallback) runs through **Groq**, which has a free tier.
+
+1. Go to **https://console.groq.com**
+2. Sign up / log in
+3. Open **API Keys** in the left sidebar
+4. Click **Create API Key**, name it anything, copy the key (starts with `gsk_...`)
+
+You only need this **one** key — it covers the LLM calls, Whisper
+transcription, and the vision model.
+
+Optional: if YouTube ever blocks your server's IP from fetching captions,
+you can add a Webshare residential proxy (`PROXY_USERNAME` /
+`PROXY_PASSWORD`) — see `backend/.env.example`. Not required to get started.
+
+---
+
+## 3. Backend setup
+
+**Requirements:** Python 3.10+, and `ffmpeg` on your system (used by
+`yt-dlp` for the audio/visual fallback paths):
 - macOS: `brew install ffmpeg`
 - Ubuntu/Debian: `sudo apt install ffmpeg`
-- Windows: download from ffmpeg.org and add to PATH
+- Windows: download from ffmpeg.org and add it to PATH
 
-Run it:
 ```bash
-streamlit run app.py
+cd backend
+python -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
+
+pip install -r requirements.txt
+
+cp .env.example .env            # then open .env and paste your GROQ_API_KEY
 ```
 
-## Models used (all free tier)
+Run the API server:
+
+```bash
+uvicorn main:app --reload --port 8000
+```
+
+You should see it come up on `http://localhost:8000`. Check it's alive:
+
+```bash
+curl http://localhost:8000/api/health
+# {"status":"ok"}
+```
+
+Interactive API docs (auto-generated by FastAPI) are at
+`http://localhost:8000/docs`.
+
+---
+
+## 4. Frontend setup
+
+**Requirements:** Node.js 18+
+
+```bash
+cd frontend
+npm install
+
+cp .env.example .env            # only needed if your backend isn't on localhost:8000
+```
+
+Run the dev server:
+
+```bash
+npm run dev
+```
+
+Open the URL it prints (usually `http://localhost:5173`). The app will call
+the backend at `http://localhost:8000` by default — make sure the backend
+(step 3) is running first.
+
+### Building for production
+
+```bash
+npm run build      # outputs static files to frontend/dist
+npm run preview    # serve the production build locally to sanity-check it
+```
+
+Deploy `frontend/dist` to any static host (Vercel, Netlify, GitHub Pages,
+S3, etc.), and set `VITE_API_BASE_URL` at build time to point at wherever
+you deploy the backend (Railway, Render, Fly.io, a VPS, etc.).
+
+---
+
+## 5. Running both together (quick start)
+
+Two terminals:
+
+```bash
+# Terminal 1
+cd backend && source venv/bin/activate && uvicorn main:app --reload --port 8000
+
+# Terminal 2
+cd frontend && npm run dev
+```
+
+Then open `http://localhost:5173`, paste a YouTube URL, pick a caption
+language (or leave it on "Auto Detect"), and click **Generate Study Notes**.
+
+---
+
+## 6. How a request flows (short version)
+
+1. React sends `POST /api/notes` with `{ url, language }` to the FastAPI
+   backend.
+2. The backend tries, in order: existing YouTube captions → Whisper audio
+   transcription → vision-model frame analysis — stopping as soon as it has
+   enough text.
+3. That text is sent to the Groq LLM once to generate the summary, key
+   points, Q&A, quiz, and flashcards in a single response (kept cheap by
+   compressing very long transcripts first), then a second time to detect
+   any flowchart/chart/mind-map worth drawing.
+4. The backend returns one JSON payload with everything; the React app
+   renders it across the six tabs, all client-side (no reload needed to
+   switch tabs, flip flashcards, or take the quiz).
+5. **Download Notes as PDF** calls `POST /api/pdf`, which streams back a
+   PDF built from the same text sections.
+
+See `ARCHITECTURE.md` for the full breakdown.
+
+---
+
+## 7. Models used (all free tier)
 
 | Task | Model | Where |
 |---|---|---|
 | Transcript (primary) | existing YouTube captions | `youtube-transcript-api`, no key needed |
 | Transcript (fallback, no captions) | `whisper-large-v3-turbo` | Groq API — free tier |
-| Summary / notes / quiz / flashcards | `llama-3.1-8b-instant` | Groq API — free tier |
+| Visual fallback (little/no speech) | `meta-llama/llama-4-scout-17b-16e-instruct` | Groq API — free tier |
+| Summary / notes / quiz / flashcards / visuals JSON | `llama-3.1-8b-instant` | Groq API — free tier |
 
-Get a free Groq API key at https://console.groq.com — one key covers both
-the LLM and Whisper calls.
+Model names are configurable via `LLM_MODEL` / `WHISPER_MODEL` in
+`backend/.env` without touching any code.
+
+---
+
+## 8. Themes
+
+The frontend ships with two themes, toggled from the button in the top-right
+corner (persisted in `localStorage`):
+
+- **`academic-dark`** — near-black background, light grey text/accents
+- **`academic-light`** — white background, near-black text/accents
+
+Both are defined purely as CSS custom properties in
+`frontend/src/styles/themes.css` and applied via `data-theme` on the root
+`<html>` element, so adding a third theme later is just adding another
+`:root[data-theme='...']` block.
+
+---
+
+## 9. Troubleshooting
+
+- **"Failed to fetch" / network error in the browser** — the backend isn't
+  running, or it's running on a different port than `VITE_API_BASE_URL`
+  points to. Check `http://localhost:8000/api/health`.
+- **CORS error in the browser console** — set `CORS_ORIGINS` in
+  `backend/.env` to include the exact origin the frontend is served from
+  (defaults already cover `http://localhost:5173`).
+- **"GROQ_API_KEY is not set"** — you didn't copy `.env.example` to `.env`
+  in `backend/`, or forgot to paste the key in.
+- **Audio/visual fallback fails** — make sure `ffmpeg` is installed and on
+  your PATH (`ffmpeg -version` should work in your terminal).

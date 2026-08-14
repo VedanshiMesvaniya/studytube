@@ -1,7 +1,8 @@
-streamlit
+fastapi
+uvicorn[standard]
+pydantic
 youtube-transcript-api
 groq
 python-dotenv
 fpdf2
-matplotlib
 yt-dlp
