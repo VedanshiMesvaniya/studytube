@@ -1,6 +1,17 @@
-env/ 
-.venv
-.env 
-__pycache__/ 
-*.pyc 
-secrets.toml 
+# Python (backend)
+backend/env/
+backend/.venv
+backend/__pycache__/
+backend/**/__pycache__/
+*.pyc
+.env
+secrets.toml
+
+# Node (frontend)
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# Editors / OS
+.DS_Store
+.vscode/
