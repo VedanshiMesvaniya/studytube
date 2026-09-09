@@ -13,14 +13,14 @@ HTTP:
                                                                       │
                                                     ┌─────────────────┼─────────────────┐
                                                     ▼                 ▼                 ▼
-                                          YouTube captions      Groq (Whisper,     Groq (LLM,
+                                          YouTube captions      NVIDIA (Riva ASR,  NVIDIA (LLM,
                                           (youtube-transcript-  vision model)      notes/quiz/
                                           api)                  via yt-dlp +       flashcards/
                                                                  ffmpeg            visuals JSON)
 ```
 
 This is a clean frontend/backend split rather than a monolith because the
-heavy lifting (yt-dlp, ffmpeg, the Groq SDK, PDF generation) is
+heavy lifting (yt-dlp, ffmpeg, the NVIDIA/Riva SDKs, PDF generation) is
 Python-specific and was already written and working — porting it to
 JavaScript would mean rewriting battle-tested logic for no benefit. Wrapping
 it in a small FastAPI layer instead lets the whole `src/services` and
@@ -32,8 +32,8 @@ it in a small FastAPI layer instead lets the whole `src/services` and
 
 **Framework:** FastAPI + Uvicorn.
 
-**Responsibility:** own all external calls (YouTube, Groq, ffmpeg/yt-dlp)
-and all business logic. The frontend never talks to Groq or YouTube
+**Responsibility:** own all external calls (YouTube, NVIDIA, ffmpeg/yt-dlp)
+and all business logic. The frontend never talks to NVIDIA or YouTube
 directly — it only ever calls this API.
 
 ### Request pipeline (`POST /api/notes`)
@@ -44,12 +44,15 @@ directly — it only ever calls this API.
 2. If captions are missing or too short (`understanding_service`, threshold
    `MIN_WORDS_CONSIDERED_SUBSTANTIAL = 40`), falls back to
    **`audio_transcription.transcribe_video_audio`** — downloads compressed
-   mono audio with `yt-dlp` and transcribes it with Groq's hosted Whisper.
+   mono audio with `yt-dlp`, re-encodes it to 16kHz mono WAV (`ffmpeg`), and
+   transcribes it with NVIDIA's hosted Riva/Parakeet ASR (gRPC, via
+   `nvidia-riva-client`).
 3. If the audio transcript is *also* thin (silent/visual-heavy videos —
    screen recordings, slide decks with only music), falls back to
    **`visual_transcription.get_visual_transcript`** — downloads a low-res
    copy of the video, extracts one frame every 20 seconds (`ffmpeg`, capped
-   at 15 frames), and asks Groq's vision model to describe on-screen
+   at 15 frames), and asks NVIDIA's vision model
+   (`nvidia/llama-3.1-nemotron-nano-vl-8b-v1`) to describe on-screen
    text/code/diagrams for each frame, producing a timestamped "visual
    transcript."
 4. Steps 2 and 3 can combine (e.g. a mostly-silent coding video with
@@ -57,7 +60,7 @@ directly — it only ever calls this API.
    descriptions merged).
 5. Whatever text results is compressed if very long
    (`llm_service.compress_transcript` — chunks + per-chunk summarization,
-   only kicks in above ~2000 words) and sent to the Groq LLM **once** with a
+   only kicks in above ~2000 words) and sent to the NVIDIA LLM **once** with a
    single structured prompt that returns summary, key points, Q&A, quiz,
    and flashcards together (`get_all_notes` / `parse_all_notes`), then a
    **second** call asks the LLM to return JSON describing any
@@ -210,7 +213,8 @@ Response: `application/pdf` binary stream (`Content-Disposition: attachment`).
 - Feature set: transcript/audio/visual understanding cascade, summary, key
   points, Q&A, scored quiz, flip flashcards, auto-detected
   visuals, PDF export.
-- Model choices and prompts (`llm_service.py` is unchanged).
+- Prompts (`llm_service.py` logic is unchanged — only the provider/client
+  and model IDs changed, from Groq to NVIDIA).
 - Fallback thresholds (`MIN_WORDS_CONSIDERED_SUBSTANTIAL`, frame interval,
   max frames, max file size for audio).
 - Config resolution order (`.env` file, `CORS_ORIGINS`/models overridable

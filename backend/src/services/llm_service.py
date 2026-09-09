@@ -1,13 +1,13 @@
 import json
 import time
-from groq import Groq
-from src.config import GROQ_API_KEY, LLM_MODEL
+from openai import OpenAI
+from src.config import NVIDIA_API_KEY, NVIDIA_BASE_URL, LLM_MODEL
 from src.utils.helpers import truncate_text, chunk_text
 
 def get_client():
-    return Groq(api_key=GROQ_API_KEY)
+    return OpenAI(base_url=NVIDIA_BASE_URL, api_key=NVIDIA_API_KEY)
 
-def ask_groq(prompt, max_tokens=1800, retries=3):
+def ask_llm(prompt, max_tokens=1800, retries=3):
     client = get_client()
     for attempt in range(retries):
         try:
@@ -40,7 +40,7 @@ Do not include any intro. Start directly.
 Segment:
 {chunk}"""
         try:
-            summary = ask_groq(prompt, max_tokens=150)
+            summary = ask_llm(prompt, max_tokens=150)
             summaries.append(summary)
             if i < len(chunks) - 1:
                 time.sleep(2)
@@ -93,7 +93,7 @@ BACK: definition or explanation
 Transcript:
 {compressed}"""
 
-    return ask_groq(prompt, max_tokens=1800), num_chunks
+    return ask_llm(prompt, max_tokens=1800), num_chunks
 
 def parse_all_notes(raw):
     if isinstance(raw, tuple):
@@ -167,7 +167,7 @@ Rules:
 Transcript:
 {compressed}"""
 
-    raw = ask_groq(prompt, max_tokens=600)
+    raw = ask_llm(prompt, max_tokens=600)
     try:
         raw = raw.strip()
         if raw.startswith("```"):

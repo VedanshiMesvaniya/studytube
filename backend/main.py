@@ -2,7 +2,7 @@
 StudyTube API — FastAPI backend.
 
 This replaces the old Streamlit UI (app.py). All the notes-generation
-logic (transcript fetching, Whisper/vision fallback, Groq LLM calls,
+logic (transcript fetching, ASR/vision fallback, NVIDIA LLM calls,
 PDF export) lives untouched in src/services and src/utils — this file
 just exposes it over HTTP so the React frontend (../frontend) can call
 it.

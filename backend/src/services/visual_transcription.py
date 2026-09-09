@@ -4,24 +4,26 @@ Visual understanding for videos with little or no spoken audio
 only, etc).
 
 Flow: download a low-res copy of the video (yt-dlp) -> pull one frame
-every FRAME_INTERVAL_SEC seconds (ffmpeg) -> send each frame to Groq's
-free vision model (Llama 4 Scout) and ask it to read/describe on-screen
-text, code, diagrams -> stitch the per-frame notes into a timestamped
-"visual transcript" that can be fed into the same notes pipeline as a
-normal transcript.
+every FRAME_INTERVAL_SEC seconds (ffmpeg) -> send each frame to NVIDIA's
+free hosted vision-language model (Llama Nemotron Nano VL — a document/
+OCR-focused VLM) and ask it to read/describe on-screen text, code,
+diagrams -> stitch the per-frame notes into a timestamped "visual
+transcript" that can be fed into the same notes pipeline as a normal
+transcript.
 
-Uses the same GROQ_API_KEY as the rest of the app.
+Uses the same NVIDIA_API_KEY and OpenAI-compatible endpoint as the LLM
+service (NVIDIA's NIM API is OpenAI SDK-compatible for both chat and
+vision models).
 """
 import base64
 import os
 import subprocess
 import tempfile
 
-from groq import Groq
+from openai import OpenAI
 
-from src.config import GROQ_API_KEY
+from src.config import NVIDIA_API_KEY, NVIDIA_BASE_URL, VISION_MODEL
 
-VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 FRAME_INTERVAL_SEC = 20      # take a frame every 20s of video
 MAX_FRAMES = 15              # hard cap so this stays fast + free-tier friendly
 
@@ -76,7 +78,7 @@ def _extract_frames(video_path: str, out_dir: str) -> list[tuple[int, str]]:
     ]
 
 
-def _describe_frame(client: Groq, frame_path: str) -> str:
+def _describe_frame(client: OpenAI, frame_path: str) -> str:
     with open(frame_path, "rb") as f:
         b64 = base64.b64encode(f.read()).decode()
 
@@ -107,10 +109,10 @@ def get_visual_transcript(video_url: str) -> tuple[str | None, str | None]:
     Extracts frames from the video and builds a timestamped description
     of on-screen content. Returns (visual_transcript_text, error_message).
     """
-    if not GROQ_API_KEY:
-        return None, "GROQ_API_KEY is not set — cannot run visual understanding."
+    if not NVIDIA_API_KEY:
+        return None, "NVIDIA_API_KEY is not set — cannot run visual understanding."
 
-    client = Groq(api_key=GROQ_API_KEY)
+    client = OpenAI(base_url=NVIDIA_BASE_URL, api_key=NVIDIA_API_KEY)
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         try:

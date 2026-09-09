@@ -2,14 +2,14 @@
 
 Paste a YouTube link → fetches the transcript → an LLM summarizes it, pulls
 key points, generates Q&A, a quiz, and flashcards, and detects any
-diagrams/charts/mind-maps worth visualizing. Falls back to Whisper audio
-transcription automatically if a video has no captions, and to vision-model
-frame analysis if it also has little/no speech.
+diagrams/charts/mind-maps worth visualizing. Falls back to NVIDIA speech-to-text (Riva/Parakeet) automatically if a
+video has no captions, and to a vision model for frame analysis if it
+also has little/no speech.
 
 This project has two parts that run separately:
 
 - **`backend/`** — a Python **FastAPI** server. This is the old Streamlit
-  app's logic (transcript fetching, Whisper/vision fallback, Groq LLM
+  app's logic (transcript fetching, ASR/vision fallback, NVIDIA LLM
   calls, PDF export), unchanged, now exposed as a small REST API instead of
   rendering HTML itself.
 - **`frontend/`** — a **React** (Vite) single-page app with two themes,
@@ -34,7 +34,7 @@ StudyTube/
 │       ├── config.py                # reads API keys/models from .env
 │       ├── services/
 │       │   ├── transcript_service.py    # YouTube captions (primary source)
-│       │   ├── audio_transcription.py   # Whisper fallback when no captions exist
+│       │   ├── audio_transcription.py   # NVIDIA Riva (Parakeet ASR) fallback when no captions exist
 │       │   ├── visual_transcription.py  # vision-model fallback for silent videos
 │       │   ├── understanding_service.py # orchestrates captions -> audio -> visual
 │       │   └── llm_service.py           # summary / key points / Q&A / quiz / flashcards / visuals JSON
@@ -76,15 +76,16 @@ StudyTube/
 
 ## 2. Get your API key (required)
 
-Everything model-related (LLM notes generation, Whisper fallback, vision
-fallback) runs through **Groq**, which has a free tier.
+Everything model-related (LLM notes generation, speech-to-text fallback,
+vision fallback) runs through **NVIDIA** (build.nvidia.com / NIM), which
+has a free tier.
 
-1. Go to **https://console.groq.com**
+1. Go to **https://build.nvidia.com**
 2. Sign up / log in
-3. Open **API Keys** in the left sidebar
-4. Click **Create API Key**, name it anything, copy the key (starts with `gsk_...`)
+3. Open any model page and click **Get API Key**
+4. Copy the key (starts with `nvapi-...`)
 
-You only need this **one** key — it covers the LLM calls, Whisper
+You only need this **one** key — it covers the LLM calls, speech-to-text
 transcription, and the vision model.
 
 Optional: if YouTube ever blocks your server's IP from fetching captions,
@@ -108,7 +109,7 @@ source venv/bin/activate        # Windows: venv\Scripts\activate
 
 pip install -r requirements.txt
 
-cp .env.example .env            # then open .env and paste your GROQ_API_KEY
+cp .env.example .env            # then open .env and paste your NVIDIA_API_KEY
 ```
 
 Run the API server:
@@ -184,10 +185,10 @@ language (or leave it on "Auto Detect"), and click **Generate Study Notes**.
 
 1. React sends `POST /api/notes` with `{ url, language }` to the FastAPI
    backend.
-2. The backend tries, in order: existing YouTube captions → Whisper audio
-   transcription → vision-model frame analysis — stopping as soon as it has
-   enough text.
-3. That text is sent to the Groq LLM once to generate the summary, key
+2. The backend tries, in order: existing YouTube captions → NVIDIA speech-to-
+   text (Riva/Parakeet) → vision-model frame analysis — stopping as soon as
+   it has enough text.
+3. That text is sent to the NVIDIA LLM once to generate the summary, key
    points, Q&A, quiz, and flashcards in a single response (kept cheap by
    compressing very long transcripts first), then a second time to detect
    any flowchart/chart/mind-map worth drawing.
@@ -206,12 +207,14 @@ See `ARCHITECTURE.md` for the full breakdown.
 | Task | Model | Where |
 |---|---|---|
 | Transcript (primary) | existing YouTube captions | `youtube-transcript-api`, no key needed |
-| Transcript (fallback, no captions) | `whisper-large-v3-turbo` | Groq API — free tier |
-| Visual fallback (little/no speech) | `meta-llama/llama-4-scout-17b-16e-instruct` | Groq API — free tier |
-| Summary / notes / quiz / flashcards / visuals JSON | `llama-3.1-8b-instant` | Groq API — free tier |
+| Transcript (fallback, no captions) | NVIDIA Riva Parakeet ASR | NVIDIA (gRPC) — free tier |
+| Visual fallback (little/no speech) | `nvidia/llama-3.1-nemotron-nano-vl-8b-v1` | NVIDIA API — free tier |
+| Summary / notes / quiz / flashcards / visuals JSON | `nvidia/llama-3.3-nemotron-super-49b-v1` | NVIDIA API — free tier |
 
-Model names are configurable via `LLM_MODEL` / `WHISPER_MODEL` in
-`backend/.env` without touching any code.
+Model names are configurable via `LLM_MODEL` / `VISION_MODEL` /
+`RIVA_ASR_FUNCTION_ID` in `backend/.env` without touching any code.
+Check https://build.nvidia.com/models before assuming a model above is
+still current — NVIDIA deprecates older NIMs over time.
 
 ---
 
@@ -238,7 +241,7 @@ Both are defined purely as CSS custom properties in
 - **CORS error in the browser console** — set `CORS_ORIGINS` in
   `backend/.env` to include the exact origin the frontend is served from
   (defaults already cover `http://localhost:5173`).
-- **"GROQ_API_KEY is not set"** — you didn't copy `.env.example` to `.env`
+- **"NVIDIA_API_KEY is not set"** — you didn't copy `.env.example` to `.env`
   in `backend/`, or forgot to paste the key in.
 - **Audio/visual fallback fails** — make sure `ffmpeg` is installed and on
   your PATH (`ffmpeg -version` should work in your terminal).

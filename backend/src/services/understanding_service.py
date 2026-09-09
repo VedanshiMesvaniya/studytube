@@ -3,10 +3,10 @@ Single entry point the UI should call to get "something to make notes
 from", trying progressively more expensive free methods:
 
 1. YouTube captions (instant, free, no key)
-2. Audio -> Whisper transcription, for videos with speech but no
-   captions (Groq free tier)
-3. Frame extraction -> vision model description, for videos with
-   little/no speech (Groq free tier)
+2. Audio -> Riva/Parakeet ASR transcription, for videos with speech but
+   no captions (NVIDIA free tier)
+3. Frame extraction -> NVIDIA vision model description, for videos with
+   little/no speech (NVIDIA free tier)
 
 Steps 2 and 3 are combined when relevant — e.g. a mostly-silent coding
 video with occasional narration gets both the (short) spoken transcript
